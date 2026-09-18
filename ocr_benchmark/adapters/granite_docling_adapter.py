@@ -29,9 +29,9 @@ class GraniteDoclingAdapter(OCRAdapter):
 
     def is_available(self) -> bool:
         try:
-            import docling.datamodel.vlm_model_specs  # noqa: F401
-            import docling.pipeline.vlm_pipeline  # noqa: F401
-            import transformers  # noqa: F401
+            import docling.datamodel.vlm_model_specs
+            import docling.pipeline.vlm_pipeline
+            import transformers
         except ImportError:
             return False
         return True
