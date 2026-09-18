@@ -1,0 +1,205 @@
+"""
+Benchmark the existing OCR adapters on Hugging Face Teklia/IAM-line.
+
+Example:
+    python -m ocr_benchmark.bench_iam_line \
+        --split test \
+        --max-samples 100 \
+        --adapters all \
+        --output-dir results/iam_line
+
+The HF dataset exposes:
+    image -> PIL image
+    text  -> ground-truth transcription
+
+Because the existing OCRAdapter interface takes a filesystem Path,
+images are materialized into output_dir/.iam_line_images/.
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from datasets import load_dataset
+from PIL import Image
+
+from .adapters import ADAPTER_REGISTRY
+from .dataset import Sample
+from .runner import BenchmarkRunner
+
+
+DATASET_NAME = "Teklia/IAM-line"
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Benchmark existing OCR adapters on Teklia/IAM-line."
+    )
+
+    parser.add_argument(
+        "--split",
+        choices=["train", "validation", "test"],
+        default="test",
+        help="Hugging Face dataset split.",
+    )
+
+    parser.add_argument(
+        "--adapters",
+        default="all",
+        help=(
+            "Comma-separated adapter names, or 'all'. "
+            f"Registered: {', '.join(sorted(ADAPTER_REGISTRY))}"
+        ),
+    )
+
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=100,
+        help="Maximum number of samples. Default: 100.",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed used when selecting a subset.",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("results/iam_line"),
+        help="Directory for benchmark output.",
+    )
+
+    return parser
+
+
+def get_adapter_names(spec: str) -> list[str]:
+    if spec == "all":
+        return list(ADAPTER_REGISTRY)
+
+    names = [x.strip() for x in spec.split(",") if x.strip()]
+
+    unknown = set(names) - set(ADAPTER_REGISTRY)
+    if unknown:
+        raise SystemExit(
+            f"Unknown adapter(s): {', '.join(sorted(unknown))}\n"
+            f"Registered: {', '.join(sorted(ADAPTER_REGISTRY))}"
+        )
+
+    return names
+
+
+def build_samples(
+    split: str,
+    max_samples: int | None,
+    seed: int,
+    image_cache_dir: Path,
+) -> list[Sample]:
+    print(f"Loading Hugging Face dataset: {DATASET_NAME}")
+    print(f"Split: {split}")
+
+    dataset = load_dataset(
+        DATASET_NAME,
+        split=split,
+    )
+
+    total = len(dataset)
+
+    print(f"Available samples: {total}")
+
+    # Select a deterministic subset for quick benchmarking.
+    if max_samples is not None and max_samples < total:
+        dataset = dataset.shuffle(seed=seed).select(range(max_samples))
+
+    image_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    samples: list[Sample] = []
+
+    for i, row in enumerate(dataset):
+        image = row["image"]
+        reference = str(row["text"]).strip()
+
+        if not isinstance(image, Image.Image):
+            raise TypeError(
+                f"Expected PIL image for sample {i}, got {type(image)}"
+            )
+
+        sample_id = f"iam-line-{split}-{i:06d}"
+
+        image_path = image_cache_dir / f"{sample_id}.png"
+
+        if not image_path.exists():
+            image.convert("RGB").save(image_path)
+
+        samples.append(
+            Sample(
+                sample_id=sample_id,
+                image_path=image_path,
+                reference_text=reference,
+            )
+        )
+
+        if (i + 1) % 50 == 0:
+            print(f"Prepared {i + 1}/{len(dataset)} images")
+
+    print(f"Prepared {len(samples)} samples")
+    return samples
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_arg_parser().parse_args(argv)
+
+    adapter_names = get_adapter_names(args.adapters)
+
+    adapters = [
+        ADAPTER_REGISTRY[name]()
+        for name in adapter_names
+    ]
+
+    image_cache_dir = args.output_dir / ".iam_line_images"
+
+    samples = build_samples(
+        split=args.split,
+        max_samples=args.max_samples,
+        seed=args.seed,
+        image_cache_dir=image_cache_dir,
+    )
+
+    print()
+    print("=" * 70)
+    print("IAM-LINE OCR BENCHMARK")
+    print("=" * 70)
+    print(f"Dataset : {DATASET_NAME}")
+    print(f"Split   : {args.split}")
+    print(f"Samples : {len(samples)}")
+    print(
+        "Adapters: "
+        + ", ".join(adapter.name for adapter in adapters)
+    )
+    print(f"Output  : {args.output_dir}")
+    print("=" * 70)
+    print()
+
+    runner = BenchmarkRunner(
+        adapters=adapters,
+        dataset=samples,
+        output_dir=args.output_dir,
+    )
+
+    summary_path = runner.run()
+
+    print()
+    print(f"Done.")
+    print(f"Summary       : {summary_path}")
+    print(
+        f"Per-sample   : "
+        f"{args.output_dir / 'per_sample.csv'}"
+    )
+
+
+if __name__ == "__main__":
+    main()
