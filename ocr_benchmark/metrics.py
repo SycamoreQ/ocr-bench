@@ -1,12 +1,3 @@
-"""Text-accuracy metrics for one (reference, hypothesis) pair.
-
-Uses `jiwer` (pip install jiwer) rather than hand-rolling edit distance —
-WER/CER definitions have enough small conventions (how substitutions vs
-insertions/deletions are counted, whitespace/case normalization) that
-it's worth using the library the field has converged on instead of a
-bespoke implementation that will quietly disagree with published numbers.
-"""
-
 from __future__ import annotations
 
 import math

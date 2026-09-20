@@ -1,34 +1,3 @@
-"""Loader for IAM Handwriting Database ground-truth files (lines.txt /
-words.txt), tolerant of whatever directory layout the archive you have
-actually extracted to.
-
-The original IAM download layout is:
-
-    <root>/ascii/words.txt
-    <root>/words/a01/a01-000u/a01-000u-00-00.png
-
-...but re-hosted mirrors (Kaggle, HF, random GitHub repos) routinely
-repackage this with a different nesting — an extra wrapper folder, no
-`ascii/` subdirectory, everything flattened, etc. The Kaggle mirror at
-nibinv23/iam-handwriting-word-database, for instance, is commonly
-extracted as `iam_words/words.txt` + `iam_words/words/a01/...` — one
-level shallower than the original, with no `ascii/` folder at all, and
-double-nested (`iam_words/iam_words/...`) is also a known Kaggle zip
-quirk.
-
-Rather than hard-coding one assumed path, this loader:
-  1. Searches --iam-root recursively for a ground-truth file named
-     `{split}.txt` (e.g. `words.txt`), wherever it is.
-  2. Indexes every image file under --iam-root once, keyed by filename
-     stem (IAM sample ids like "a01-000u-00-00" are unique across the
-     whole dataset), so it finds each sample's image regardless of how
-     deeply/differently the images are nested.
-
-If your layout is unusual enough that this still doesn't find things,
-pass --words-txt / --lines-txt and --images-root explicitly to skip
-auto-discovery.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,21 +1,3 @@
-"""
-Benchmark the existing OCR adapters on Hugging Face Teklia/IAM-line.
-
-Example:
-    python -m ocr_benchmark.bench_line \
-        --split test \
-        --max-samples 100 \
-        --adapters all \
-        --output-dir results/iam_line
-
-The HF dataset exposes:
-    image -> PIL image
-    text  -> ground-truth transcription
-
-Because the existing OCRAdapter interface takes a filesystem Path,
-images are materialized into output_dir/.iam_line_images/.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,10 +13,6 @@ from .runner import BenchmarkRunner
 
 
 DATASET_NAME = "Teklia/IAM-line"
-
-# Print full before/after diagnostics for the first N samples, so a
-# silently-blank image shows up immediately in the log instead of
-# surfacing an hour later as "every adapter returned nothing".
 DIAGNOSE_FIRST_N = 3
 
 
@@ -138,8 +116,6 @@ def build_samples(
     total = len(dataset)
 
     print(f"Available samples: {total}")
-
-    # Select a deterministic subset for quick benchmarking.
     if max_samples is not None and max_samples < total:
         dataset = dataset.shuffle(seed=seed).select(range(max_samples))
 
@@ -234,18 +210,15 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     print()
-    print("=" * 70)
     print("IAM-LINE OCR BENCHMARK")
-    print("=" * 70)
     print(f"Dataset : {DATASET_NAME}")
-    print(f"Split   : {args.split}")
+    print(f"Split : {args.split}")
     print(f"Samples : {len(samples)}")
     print(
         "Adapters: "
         + ", ".join(adapter.name for adapter in adapters)
     )
     print(f"Output  : {args.output_dir}")
-    print("=" * 70)
     print()
 
     runner = BenchmarkRunner(
@@ -258,9 +231,9 @@ def main(argv: list[str] | None = None) -> None:
 
     print()
     print("Done.")
-    print(f"Summary       : {summary_path}")
+    print(f"Summary: {summary_path}")
     print(
-        f"Per-sample   : "
+        f"Per-sample: "
         f"{args.output_dir / 'per_sample.csv'}"
     )
 

@@ -1,24 +1,3 @@
-"""CLI entry point.
-
-Examples
---------
-Run every registered adapter over 200 IAM lines:
-
-    python -m ocr_benchmark.cli \\
-        --iam-root /path/to/IAM \\
-        --split lines \\
-        --max-samples 200 \\
-        --output-dir results/
-
-Run just the two reference adapters (the ones guaranteed to work out of
-the box, before you've filled in the stubs):
-
-    python -m ocr_benchmark.cli \\
-        --iam-root /path/to/IAM \\
-        --adapters tesseract,rapidocr \\
-        --output-dir results/
-"""
-
 from __future__ import annotations
 
 import argparse

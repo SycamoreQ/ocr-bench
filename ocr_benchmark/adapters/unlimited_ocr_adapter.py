@@ -69,10 +69,7 @@ def _select_dtype(explicit: "torch.dtype | None"):
 
     if explicit is not None:
         return explicit
-    if torch.cuda.is_available():
-        major, _ = torch.cuda.get_device_capability()
-        return torch.bfloat16 if major >= 8 else torch.float16
-    return torch.float32
+    return torch.bfloat16
 
 
 @contextmanager
@@ -114,7 +111,7 @@ class UnlimitedOCRAdapter(OCRAdapter):
         self,
         crop_mode: bool = True,
         dtype: "torch.dtype | None" = None,
-        attn_implementation: str | None = "sdpa",
+        attn_implementation: str | None = "eager",
     ):
         # crop_mode=True ("gundam" config): base_size=1024, image_size=640
         # — the model card's recommended single-image setting. Set False
@@ -136,8 +133,8 @@ class UnlimitedOCRAdapter(OCRAdapter):
 
     def is_available(self) -> bool:
         try:
-            import torch  # noqa: F401
-            import transformers  # noqa: F401
+            import torch
+            import transformers
         except ImportError:
             return False
         return True
@@ -171,7 +168,7 @@ class UnlimitedOCRAdapter(OCRAdapter):
                     attn_implementation=self.attn_implementation,
                     **load_kwargs,
                 )
-            except TypeError:
+            except (TypeError, ValueError):
                 # This model's remote code doesn't accept
                 # attn_implementation as a load kwarg -- fall back to its
                 # own default rather than hard-failing setup over an

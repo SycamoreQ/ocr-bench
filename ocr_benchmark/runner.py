@@ -1,17 +1,3 @@
-"""Runs a list of OCRAdapters over an iterable of dataset.Sample, timing
-and scoring each call, and writes two CSVs:
-
-    per_sample.csv - one row per (adapter, sample): text + WER/CER/etc
-    summary.csv    - one row per adapter: mean/median WER/CER, latency,
-                      failure count
-
-An adapter that isn't installed, isn't available on this platform, or
-throws during setup() is recorded as skipped/failed in summary.csv
-rather than aborting the whole run — with nine engines in play, "some of
-them aren't installed in this environment" is the normal case, not an
-error.
-"""
-
 from __future__ import annotations
 
 import csv
