@@ -1,13 +1,3 @@
-"""Shared plumbing for adapters that go through docling's DocumentConverter
-rather than calling an OCR library directly.
-
-Docling normally targets whole documents (PDF/image -> layout + text), which
-is overkill per IAM line-crop, but it gives every one of these engines the
-exact same call shape, which is what we want for a fair, low-effort-to-add
-benchmark. Each adapter just supplies an `OcrOptions` instance and this
-module does the conversion + text extraction.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,13 +36,6 @@ def convert_image_to_text(image_path: Path, ocr_options) -> str:
 
 
 def build_converter(ocr_options):
-    """Like convert_image_to_text but returns a reusable DocumentConverter,
-    for adapters that want to build it once in setup() and reuse it across
-    every recognize() call instead of rebuilding it (and re-warming the
-    OCR engine) per image. Prefer this over convert_image_to_text() in real
-    adapter implementations; convert_image_to_text() exists mainly as a
-    minimal reference for how the pieces fit together.
-    """
     try:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions

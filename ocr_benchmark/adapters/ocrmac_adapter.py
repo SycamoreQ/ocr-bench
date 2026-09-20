@@ -1,7 +1,3 @@
-"""ocrmac (Apple Vision framework), routed through docling. macOS only —
-is_available() gates on both platform and the ocrmac package so this
-adapter cleanly reports "unavailable" on Linux/CI instead of crashing."""
-
 from __future__ import annotations
 
 import sys

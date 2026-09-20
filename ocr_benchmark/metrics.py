@@ -5,9 +5,6 @@ from dataclasses import dataclass
 
 import jiwer
 
-# Standard normalization before scoring: lowercase, collapse whitespace,
-# strip punctuation. Keep this consistent across every adapter so the
-# comparison is about recognition quality, not incidental casing/spacing.
 _TRANSFORM = jiwer.Compose(
     [
         jiwer.ToLowerCase(),
@@ -39,14 +36,6 @@ class SampleMetrics:
 
 
 def compute_metrics(reference: str, hypothesis: str) -> SampleMetrics:
-    """Compute WER/CER/MER/WIL for one sample. Both strings are raw text
-    (normalization happens internally, consistently, via _TRANSFORM).
-
-    An empty reference (some IAM crops are effectively blank) can't
-    produce a meaningful WER/CER ratio — those come back as NaN rather
-    than a silently-wrong 0.0 or a ZeroDivisionError; filter them out
-    (or handle separately) when aggregating.
-    """
     ref_words = reference.split()
     if not ref_words:
         return SampleMetrics(

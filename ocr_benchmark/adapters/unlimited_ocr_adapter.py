@@ -1,22 +1,3 @@
-"""Baidu's Unlimited-OCR (baidu/Unlimited-OCR on HuggingFace) — a
-DeepSeek-OCR-derived vision-language document parser, "single-pass
-long-horizon parsing". Loaded via `transformers` with `trust_remote_code`,
-matching the model's own reference usage.
-
-Runs on CPU (e.g. a Mac, for smoke-testing) or a real CUDA GPU (e.g. a
-Modal T4) without changes -- see _select_dtype and _neutralize_cuda_calls
-below for how each is handled.
-
-The model's own `.infer(...)` call is primarily used for its side effect
-(writing results to `output_path` when `save_results=True`), but the
-published evaluation snippet for this model treats its return value as
-the raw generated string and post-processes it with a small regex to
-strip `<|det|>...<|/det|>` region-type/bbox markers before scoring — so
-we do the same: use the return value if we get a string back, and only
-fall back to reading a file out of the output directory if the installed
-model build doesn't return one.
-"""
-
 from __future__ import annotations
 
 import re
@@ -28,9 +9,6 @@ from .base import AdapterUnavailableError, OCRAdapter
 
 _MODEL_NAME = "baidu/Unlimited-OCR"
 
-# From the model card's own OmniDocBench post-processing snippet: strips
-# <|det|>type [bbox]<|/det|> region markers, keeps block text, drops
-# "image" blocks entirely, separates blocks with a blank line.
 _DET_RE = re.compile(r"<\|det\|>([^<\s]+)(?:\s*\[[^\]]*\])?\s*<\|/det\|>(.*)", re.DOTALL)
 
 
@@ -59,12 +37,6 @@ def _strip_det_markers(raw: str) -> str:
 
 
 def _select_dtype(explicit: "torch.dtype | None"):
-    """bf16 needs Ampere+ (compute capability >= 8.0) for tensor-core
-    support; on older CUDA GPUs like a T4 (7.5), fp16 is the faster
-    choice for identical precision-class numerics. On CPU, fall back to
-    fp32 -- bf16 is not consistently accelerated there and can end up
-    slower than fp32 depending on the torch build.
-    """
     import torch
 
     if explicit is not None:
@@ -74,22 +46,6 @@ def _select_dtype(explicit: "torch.dtype | None"):
 
 @contextmanager
 def _neutralize_cuda_calls():
-    """baidu/Unlimited-OCR's own `.infer()` hardcodes `.cuda()` on its
-    input tensors (e.g. `input_ids.unsqueeze(0).cuda()`) regardless of
-    what device the model was actually loaded onto. That's a bug in the
-    model's published remote code, not a device-selection problem on our
-    side -- there's no equivalent of `.to("mps")` that fixes it, because
-    `infer()` never consults the model's actual device before calling
-    `.cuda()`.
-
-    On a machine with a real CUDA device (e.g. a Modal T4), that call is
-    correct as written and must be left alone. On any machine without one
-    (CPU, Apple Silicon/MPS included), it always raises
-    `AssertionError: Torch not compiled with CUDA enabled` -- so there we
-    make `Tensor.cuda()` a no-op for the duration of the call instead,
-    leaving a CPU tensor exactly where it is. Scoped and restored
-    immediately after, so it can't affect anything else in the process.
-    """
     import torch
 
     if torch.cuda.is_available():
@@ -113,20 +69,8 @@ class UnlimitedOCRAdapter(OCRAdapter):
         dtype: "torch.dtype | None" = None,
         attn_implementation: str | None = "eager",
     ):
-        # crop_mode=True ("gundam" config): base_size=1024, image_size=640
-        # — the model card's recommended single-image setting. Set False
-        # for the "base" config (image_size=1024) on very dense pages.
         self.crop_mode = crop_mode
-        # None = auto-select via _select_dtype (bf16 on Ampere+, fp16 on
-        # older CUDA GPUs like a T4, fp32 on CPU). Pass an explicit
-        # torch.dtype to override.
         self.dtype = dtype
-        # "sdpa" avoids the model trying to auto-select flash-attention 2,
-        # which isn't available on pre-Ampere GPUs (a T4 included) and
-        # isn't relevant on CPU anyway. If this model's remote code
-        # doesn't accept the kwarg at all, setup() falls back to loading
-        # without it rather than failing -- pass None yourself to skip
-        # the attempt entirely.
         self.attn_implementation = attn_implementation
         self._tokenizer = None
         self._model = None
@@ -169,10 +113,6 @@ class UnlimitedOCRAdapter(OCRAdapter):
                     **load_kwargs,
                 )
             except (TypeError, ValueError):
-                # This model's remote code doesn't accept
-                # attn_implementation as a load kwarg -- fall back to its
-                # own default rather than hard-failing setup over an
-                # optimization flag.
                 model = None
 
         if model is None:
@@ -223,9 +163,6 @@ class UnlimitedOCRAdapter(OCRAdapter):
 
     @staticmethod
     def _read_from_output_dir(out_dir: Path) -> str:
-        # save_results=True writes generated output into output_path;
-        # exact filenames aren't part of the model's documented contract,
-        # so read whatever text/markdown file landed there most recently.
         candidates = sorted(
             (*out_dir.rglob("*.md"), *out_dir.rglob("*.mmd"), *out_dir.rglob("*.txt")),
             key=lambda p: p.stat().st_mtime,

@@ -1,15 +1,3 @@
-"""IBM Granite-Docling (ibm-granite/granite-docling-258M), via docling's
-VLM pipeline. This is structurally different from the other docling-backed
-adapters: it's not an `OcrOptions` engine plugged into `PdfPipelineOptions`,
-it's a full VLM document-conversion pipeline (`VlmPipeline` +
-`VlmPipelineOptions`), so it gets its own converter-building code instead
-of using docling_common.build_converter (which is wired for the classic
-OCR-engine pipeline).
-
-Much slower per-image than the classical OCR engines — it's running a
-~258M-parameter vision-language model, not a detector+recognizer.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,14 +1,3 @@
-"""PaddleOCR-VL (PaddlePaddle/PaddleOCR-VL, 0.9B vision-language document
-parser), via the `paddleocr` package directly — it isn't a docling
-`OcrOptions` engine.
-
-`pipeline.predict()` is a document *parser*, not a bare text recognizer:
-each result exposes `.markdown["markdown_texts"]` for the whole page in
-reading order, and `result["parsing_res_list"]` for per-block content if
-you need region-level detail instead. We use the page-level markdown text
-since that's the closest match to "what did the engine read".
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

@@ -5,11 +5,6 @@ from pathlib import Path
 
 from .base import AdapterUnavailableError, OCRAdapter
 
-# Lightweight, dependency-free markdown -> plain text. Chandra's `.markdown`
-# output is still real Markdown (headers, emphasis, links, etc.) even for a
-# single short line, and the benchmark's reference text is plain -- rather
-# than add a second parsing dependency on top of chandra's own, this just
-# strips the syntax back out.
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_HEADER_RE = re.compile(r"^#{1,6}\s*", re.MULTILINE)
@@ -49,9 +44,9 @@ class ChandraOCRAdapter(OCRAdapter):
 
     def is_available(self) -> bool:
         try:
-            import torch  # noqa: F401
-            import transformers  # noqa: F401
-            import chandra  # noqa: F401
+            import torch
+            import transformers
+            import chandra
         except ImportError:
             return False
         return True
@@ -67,11 +62,6 @@ class ChandraOCRAdapter(OCRAdapter):
                 "the vLLM-server code path is installed)."
             ) from exc
 
-        # method="hf" loads the model locally via transformers, in-process
-        # -- no separate vLLM server to stand up for a benchmark run. dtype
-        # (bfloat16) and device placement (accelerate device_map="auto")
-        # are handled inside the library itself; there's no dtype/device
-        # kwarg for this adapter to pass through even if you wanted to.
         self._manager = InferenceManager(method="hf")
 
     def recognize(self, image_path: Path) -> str:

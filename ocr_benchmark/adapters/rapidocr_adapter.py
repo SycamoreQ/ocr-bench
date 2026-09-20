@@ -1,10 +1,3 @@
-"""Reference implementation #2: RapidOCR, routed through docling.
-
-Same shape as TesseractAdapter — setup() builds one reusable converter,
-recognize() just calls .convert(). This is the pattern to copy for every
-stub adapter in this package.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,10 +15,10 @@ class RapidOCRAdapter(OCRAdapter):
 
     def is_available(self) -> bool:
         try:
-            import rapidocr_onnxruntime  # noqa: F401
+            import rapidocr_onnxruntime
         except ImportError:
             try:
-                import rapidocr  # noqa: F401
+                import rapidocr
             except ImportError:
                 return False
         return True
@@ -44,9 +37,6 @@ class RapidOCRAdapter(OCRAdapter):
                 "(docling's RapidOcrOptions needs this package on the path)."
             )
 
-        # Note (see RapidOcrOptions docstring in docling): `lang` isn't
-        # actually wired through to rapidocr yet upstream — kept here for
-        # forward-compat and so the CLI's --lang flag stays meaningful.
         ocr_options = RapidOcrOptions(lang=[self.lang])
         self._converter = build_converter(ocr_options)
 
