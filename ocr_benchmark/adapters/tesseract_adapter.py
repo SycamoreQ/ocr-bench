@@ -29,7 +29,7 @@ class TesseractAdapter(OCRAdapter):
         if not self.is_available():
             raise AdapterUnavailableError(
                 "tesseract binary not found on PATH. "
-                "`sudo apt install tesseract-ocr` (or `brew install tesseract`)."
+                "`brew install tesseract`."
             )
 
         ocr_options = TesseractOcrOptions(lang=[self.lang], psm=self.psm)

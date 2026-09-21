@@ -4,43 +4,59 @@ import argparse
 from pathlib import Path
 
 from .adapters import ADAPTER_REGISTRY
-from .dataset import IAMAsciiDataset
+from .adapters.tesseract_adapter import TesseractAdapter
+from .dataset import IAMAsciiDataset, StudentMessyHandwrittenDataset
 from .runner import BenchmarkRunner
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+
+    dataset_group = parser.add_mutually_exclusive_group(required=True)
+    dataset_group.add_argument(
         "--iam-root",
-        required=True,
         type=Path,
-        help="Root of the extracted IAM Handwriting Database "
-        "(must contain ascii/lines.txt or ascii/words.txt).",
+        help=(
+            "Root of the extracted IAM Handwriting Database "
+            "(must contain ascii/lines.txt or ascii/words.txt)."
+        ),
     )
+    dataset_group.add_argument(
+        "--smhd-root",
+        type=Path,
+        help=(
+            "Root of the downloaded Student Messy Handwritten Dataset "
+            "(must contain metadata.csv, scans/, and transcriptions/)."
+        ),
+    )
+
     parser.add_argument(
         "--split",
         choices=["lines", "words"],
         default="lines",
-        help="Which IAM ground-truth granularity to benchmark against.",
+        help="IAM ground-truth granularity. Ignored for SMHD.",
     )
     parser.add_argument(
         "--adapters",
         default="all",
-        help=f"Comma-separated adapter names, or 'all'. Registered: "
-        f"{', '.join(sorted(ADAPTER_REGISTRY))}",
+        help=(
+            "Comma-separated adapter names, or 'all'. Registered: "
+            f"{', '.join(sorted(ADAPTER_REGISTRY))}"
+        ),
     )
     parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
-        help="Cap the number of dataset samples (useful while adapters "
-        "are still being filled in / for a quick smoke test).",
+        help="Cap the number of dataset samples (useful for smoke tests).",
     )
     parser.add_argument(
         "--include-err-segmented",
         action="store_true",
-        help="By default, IAM rows flagged 'err' (known bad segmentation) "
-        "are skipped. Pass this to include them anyway.",
+        help=(
+            "IAM only: include rows flagged 'err' instead of skipping them. "
+            "Ignored for SMHD."
+        ),
     )
     parser.add_argument(
         "--words-txt",
@@ -48,17 +64,35 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="gt_file",
         type=Path,
         default=None,
-        help="Explicit path to words.txt/lines.txt, if auto-discovery "
-        "under --iam-root picks the wrong file or your mirror uses a "
-        "non-standard layout.",
+        help=(
+            "IAM only: explicit path to words.txt/lines.txt if auto-discovery "
+            "finds the wrong file."
+        ),
     )
     parser.add_argument(
         "--images-root",
         type=Path,
         default=None,
-        help="Explicit directory to index images under (default: "
-        "--iam-root itself). Only needed if images live outside "
-        "--iam-root.",
+        help=(
+            "IAM only: explicit directory containing images. "
+            "Ignored for SMHD, which uses metadata.csv."
+        ),
+    )
+    parser.add_argument(
+        "--smhd-metadata-csv",
+        type=Path,
+        default=None,
+        help="SMHD only: optional explicit path to metadata.csv.",
+    )
+    parser.add_argument(
+        "--tesseract-psm",
+        type=int,
+        default=None,
+        help=(
+            "Tesseract page segmentation mode. Default: 7 for IAM, "
+            "6 for SMHD. Use 6 for dense handwritten pages; 3 is also "
+            "worth testing."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -83,16 +117,44 @@ def main(argv: list[str] | None = None) -> None:
                 f"Registered: {', '.join(sorted(ADAPTER_REGISTRY))}"
             )
 
-    adapters = [ADAPTER_REGISTRY[name]() for name in adapter_names]
+    using_smhd = args.smhd_root is not None
 
-    dataset = IAMAsciiDataset(
-        root=args.iam_root,
-        split=args.split,
-        only_ok=not args.include_err_segmented,
-        max_samples=args.max_samples,
-        gt_file=args.gt_file,
-        images_root=args.images_root,
-    )
+    adapters = []
+    for name in adapter_names:
+        if name == "tesseract":
+            # IAM's original benchmark uses line/word crops, for which PSM 7
+            # is appropriate. SMHD contains full handwritten pages, so PSM 6
+            # is a better default and avoids the empty-output failure caused
+            # by treating a multi-line page as one text line.
+            default_psm = 6 if using_smhd else 7
+            psm = args.tesseract_psm if args.tesseract_psm is not None else default_psm
+            adapters.append(TesseractAdapter(lang="eng", psm=psm))
+        else:
+            adapters.append(ADAPTER_REGISTRY[name]())
+
+    if args.smhd_root is not None:
+        if args.smhd_metadata_csv is not None:
+            metadata_csv = args.smhd_metadata_csv
+        else:
+            metadata_csv = None
+
+        dataset = StudentMessyHandwrittenDataset(
+            root=args.smhd_root,
+            max_samples=args.max_samples,
+            metadata_csv=metadata_csv,
+        )
+    else:
+        if args.smhd_metadata_csv is not None:
+            raise SystemExit("--smhd-metadata-csv can only be used with --smhd-root")
+
+        dataset = IAMAsciiDataset(
+            root=args.iam_root,
+            split=args.split,
+            only_ok=not args.include_err_segmented,
+            max_samples=args.max_samples,
+            gt_file=args.gt_file,
+            images_root=args.images_root,
+        )
 
     runner = BenchmarkRunner(adapters, dataset, args.output_dir)
     summary_path = runner.run()
