@@ -4,7 +4,6 @@ import csv
 import statistics
 import time
 import traceback
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -30,7 +29,6 @@ PER_SAMPLE_FIELDS = [
     "error",
 ]
 
-
 SUMMARY_FIELDS = [
     "adapter",
     "status",
@@ -52,8 +50,7 @@ SUMMARY_FIELDS = [
 @dataclass
 class _AdapterRunResult:
     adapter_name: str
-    status: str  # ok | unavailable | setup_failed
-
+    status: str
     note: str = ""
 
     wers: list[float] = field(default_factory=list)
@@ -61,11 +58,7 @@ class _AdapterRunResult:
     latencies: list[float] = field(default_factory=list)
 
     num_failed: int = 0
-
-    # Total time spent inside OCR inference.
     total_inference_s: float = 0.0
-
-    # Number of calls to recognize()/recognize_batch().
     num_batches: int = 0
 
 
@@ -81,16 +74,10 @@ class BenchmarkRunner:
             raise ValueError("batch_size must be >= 1")
 
         self.adapters = adapters
-
-        # Materialize once so every adapter runs over the identical
-        # sample set.
         self.samples: list[Sample] = list(dataset)
 
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.batch_size = batch_size
 
@@ -106,21 +93,17 @@ class BenchmarkRunner:
             newline="",
             encoding="utf-8",
         ) as f:
-
             writer = csv.DictWriter(
                 f,
                 fieldnames=PER_SAMPLE_FIELDS,
             )
-
             writer.writeheader()
 
             for adapter in self.adapters:
-
                 result = self._run_one_adapter(
                     adapter,
                     writer,
                 )
-
                 summaries.append(result)
 
         self._write_summary(
@@ -136,15 +119,10 @@ class BenchmarkRunner:
         writer: csv.DictWriter,
     ) -> _AdapterRunResult:
 
-        print(
-            f"[{adapter.name}] checking availability..."
-        )
+        print(f"[{adapter.name}] checking availability...")
 
         if not adapter.is_available():
-
-            print(
-                f"[{adapter.name}] not available, skipping"
-            )
+            print(f"[{adapter.name}] not available, skipping")
 
             return _AdapterRunResult(
                 adapter.name,
@@ -153,18 +131,11 @@ class BenchmarkRunner:
             )
 
         try:
-
-            print(
-                f"[{adapter.name}] setup..."
-            )
-
+            print(f"[{adapter.name}] setup...")
             adapter.setup()
 
         except AdapterUnavailableError as exc:
-
-            print(
-                f"[{adapter.name}] setup declined: {exc}"
-            )
+            print(f"[{adapter.name}] setup declined: {exc}")
 
             return _AdapterRunResult(
                 adapter.name,
@@ -173,10 +144,7 @@ class BenchmarkRunner:
             )
 
         except Exception as exc:
-
-            print(
-                f"[{adapter.name}] setup crashed: {exc}"
-            )
+            print(f"[{adapter.name}] setup crashed: {exc}")
 
             return _AdapterRunResult(
                 adapter.name,
@@ -190,10 +158,6 @@ class BenchmarkRunner:
         )
 
         try:
-
-            # Use batch mode only if:
-            #   1. batch_size > 1
-            #   2. adapter implements recognize_batch()
             recognize_batch = getattr(
                 adapter,
                 "recognize_batch",
@@ -218,7 +182,6 @@ class BenchmarkRunner:
                 )
 
             else:
-
                 if self.batch_size > 1:
                     result.note = (
                         f"adapter does not implement recognize_batch(); "
@@ -232,7 +195,6 @@ class BenchmarkRunner:
                 )
 
         finally:
-
             try:
                 adapter.teardown()
             except Exception:
@@ -257,7 +219,6 @@ class BenchmarkRunner:
             )
 
             if (i + 1) % 50 == 0:
-
                 print(
                     f"[{adapter.name}] "
                     f"{i + 1}/{len(self.samples)} samples"
@@ -280,7 +241,7 @@ class BenchmarkRunner:
         ):
 
             batch_samples = self.samples[
-                start : start + self.batch_size
+                start:start + self.batch_size
             ]
 
             image_paths = [
@@ -295,12 +256,12 @@ class BenchmarkRunner:
             print(
                 f"[{adapter.name}] "
                 f"batch {batch_number}: "
-                f"{start + 1}-{start + len(batch_samples)}"
-                f"/{total}"
+                f"{start + 1}-"
+                f"{start + len(batch_samples)}/"
+                f"{total}"
             )
 
             try:
-
                 t0 = time.perf_counter()
 
                 hypotheses = recognize_batch(
@@ -311,28 +272,22 @@ class BenchmarkRunner:
                     time.perf_counter() - t0
                 )
 
-                result.total_inference_s += (
-                    batch_latency
-                )
-
+                result.total_inference_s += batch_latency
                 result.num_batches += 1
 
                 if len(hypotheses) != len(batch_samples):
-
                     raise RuntimeError(
                         f"recognize_batch() returned "
                         f"{len(hypotheses)} hypotheses for "
                         f"{len(batch_samples)} samples"
                     )
 
-                # This is the fair throughput metric for batched
-                # inference: how much batch time is amortized per page.
                 amortized_latency = (
                     batch_latency
                     / len(batch_samples)
                 )
 
-                batch_throughput = (
+                throughput = (
                     len(batch_samples)
                     / batch_latency
                     if batch_latency > 0
@@ -342,8 +297,10 @@ class BenchmarkRunner:
                 print(
                     f"[{adapter.name}] "
                     f"batch_time={batch_latency:.3f}s | "
-                    f"amortized={amortized_latency:.3f}s/page | "
-                    f"throughput={batch_throughput:.3f} pages/s"
+                    f"amortized="
+                    f"{amortized_latency:.3f}s/page | "
+                    f"throughput="
+                    f"{throughput:.3f} pages/s"
                 )
 
                 for sample, hypothesis in zip(
@@ -356,51 +313,37 @@ class BenchmarkRunner:
                         hypothesis,
                     )
 
-                    row = {
-                        "adapter": adapter.name,
-                        "sample_id": sample.sample_id,
-                        "image_path": str(
-                            sample.image_path
-                        ),
-                        "reference": sample.reference_text,
-                        "hypothesis": hypothesis,
-                        "wer": metrics.wer,
-                        "cer": metrics.cer,
-                        "mer": metrics.mer,
-                        "wil": metrics.wil,
-
-                        # IMPORTANT:
-                        # For batched Chandra this is NOT single-request
-                        # latency. It is the batch time amortized over
-                        # the number of images in the batch.
-                        "latency_s": amortized_latency,
-
-                        "batch_latency_s": batch_latency,
-                        "batch_size": len(batch_samples),
-                        "error": "",
-                    }
-
-                    writer.writerow(row)
+                    writer.writerow(
+                        {
+                            "adapter": adapter.name,
+                            "sample_id": sample.sample_id,
+                            "image_path": str(
+                                sample.image_path
+                            ),
+                            "reference": sample.reference_text,
+                            "hypothesis": hypothesis,
+                            "wer": metrics.wer,
+                            "cer": metrics.cer,
+                            "mer": metrics.mer,
+                            "wil": metrics.wil,
+                            "latency_s": amortized_latency,
+                            "batch_latency_s": batch_latency,
+                            "batch_size": len(batch_samples),
+                            "error": "",
+                        }
+                    )
 
                     result.latencies.append(
                         amortized_latency
                     )
 
                     if metrics.wer == metrics.wer:
-                        result.wers.append(
-                            metrics.wer
-                        )
-                        result.cers.append(
-                            metrics.cer
-                        )
-
-                writer.dialect
+                        result.wers.append(metrics.wer)
+                        result.cers.append(metrics.cer)
 
             except Exception as exc:
 
-                result.num_failed += len(
-                    batch_samples
-                )
+                result.num_failed += len(batch_samples)
 
                 print(
                     f"[{adapter.name}] "
@@ -411,7 +354,6 @@ class BenchmarkRunner:
                 traceback.print_exc()
 
                 for sample in batch_samples:
-
                     writer.writerow(
                         {
                             "adapter": adapter.name,
@@ -427,12 +369,9 @@ class BenchmarkRunner:
                             "wil": "",
                             "latency_s": "",
                             "batch_latency_s": "",
-                            "batch_size": len(
-                                batch_samples
-                            ),
+                            "batch_size": len(batch_samples),
                             "error": (
-                                f"{type(exc).__name__}: "
-                                f"{exc}"
+                                f"{type(exc).__name__}: {exc}"
                             ),
                         }
                     )
@@ -448,9 +387,7 @@ class BenchmarkRunner:
         row = {
             "adapter": adapter.name,
             "sample_id": sample.sample_id,
-            "image_path": str(
-                sample.image_path
-            ),
+            "image_path": str(sample.image_path),
             "reference": sample.reference_text,
             "hypothesis": "",
             "wer": "",
@@ -464,15 +401,14 @@ class BenchmarkRunner:
         }
 
         try:
-
-            start = time.perf_counter()
+            t0 = time.perf_counter()
 
             hypothesis = adapter.recognize(
                 sample.image_path
             )
 
             latency = (
-                time.perf_counter() - start
+                time.perf_counter() - t0
             )
 
             result.total_inference_s += latency
@@ -490,30 +426,21 @@ class BenchmarkRunner:
             row["wil"] = metrics.wil
             row["latency_s"] = latency
 
-            result.latencies.append(
-                latency
-            )
+            result.latencies.append(latency)
 
             if metrics.wer == metrics.wer:
-                result.wers.append(
-                    metrics.wer
-                )
-                result.cers.append(
-                    metrics.cer
-                )
+                result.wers.append(metrics.wer)
+                result.cers.append(metrics.cer)
 
         except Exception as exc:
-
             row["error"] = (
                 f"{type(exc).__name__}: {exc}"
             )
 
             result.num_failed += 1
-
             traceback.print_exc()
 
         finally:
-
             writer.writerow(row)
 
     def _write_summary(
@@ -552,31 +479,26 @@ class BenchmarkRunner:
                         "status": s.status,
                         "num_samples_scored": num_scored,
                         "num_samples_failed": s.num_failed,
-
                         "mean_wer": (
                             statistics.mean(s.wers)
                             if s.wers
                             else ""
                         ),
-
                         "median_wer": (
                             statistics.median(s.wers)
                             if s.wers
                             else ""
                         ),
-
                         "mean_cer": (
                             statistics.mean(s.cers)
                             if s.cers
                             else ""
                         ),
-
                         "median_cer": (
                             statistics.median(s.cers)
                             if s.cers
                             else ""
                         ),
-
                         "mean_latency_s": (
                             statistics.mean(
                                 s.latencies
@@ -584,19 +506,12 @@ class BenchmarkRunner:
                             if s.latencies
                             else ""
                         ),
-
                         "throughput_pages_s": throughput,
-
                         "total_inference_s": (
                             s.total_inference_s
                         ),
-
-                        "num_batches": (
-                            s.num_batches
-                        ),
-
+                        "num_batches": s.num_batches,
                         "batch_size": self.batch_size,
-
                         "note": s.note,
                     }
                 )

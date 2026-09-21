@@ -19,11 +19,6 @@ _MD_EMPHASIS_RE = re.compile(
 
 
 def _markdown_to_text(markdown: str) -> str:
-    """
-    Convert Chandra's markdown output into plain text so that
-    WER/CER are computed against the same kind of text produced
-    by the other OCR adapters.
-    """
     text = _MD_IMAGE_RE.sub("", markdown)
     text = _MD_LINK_RE.sub(r"\1", text)
     text = _MD_HEADER_RE.sub("", text)
@@ -66,49 +61,35 @@ class ChandraOCRAdapter(OCRAdapter):
         except ImportError as exc:
             raise AdapterUnavailableError(
                 "chandra-ocr is not installed. "
-                "Run `pip install chandra-ocr`."
+                "Install it with `pip install chandra-ocr`."
             ) from exc
 
         # IMPORTANT:
-        # We use Chandra's vLLM client rather than local HuggingFace
-        # inference. The actual model runs in the vLLM server.
-        self._manager = InferenceManager(method="vllm")
-
-        print(
-            f"[chandra] vLLM endpoint: {self.vllm_api_base}"
+        # This is the vLLM client, NOT HF/Transformers inference.
+        self._manager = InferenceManager(
+            method="vllm"
         )
 
         print(
-            f"[chandra] max_output_tokens: {self.max_output_tokens}"
+            f"[chandra] vLLM endpoint: "
+            f"{self.vllm_api_base}"
         )
 
-        if self.max_workers is not None:
-            print(
-                f"[chandra] max_workers: {self.max_workers}"
-            )
+    def recognize(
+        self,
+        image_path: Path,
+    ) -> str:
 
-    def recognize(self, image_path: Path) -> str:
-        """
-        Compatibility path for the normal single-image OCRAdapter API.
-
-        For the benchmark, BenchmarkRunner will call recognize_batch()
-        whenever --batch-size > 1.
-        """
-        results = self.recognize_batch([image_path])
-
-        return results[0]
+        return self.recognize_batch(
+            [image_path]
+        )[0]
 
     def recognize_batch(
         self,
         image_paths: Sequence[Path],
     ) -> list[str]:
-        """
-        Run multiple images through Chandra's vLLM backend.
 
-        Chandra's vLLM backend sends the items concurrently, allowing
-        the vLLM server to dynamically batch requests.
-        """
-        assert self._manager is not None, "call setup() before recognize_batch()"
+        assert self._manager is not None
 
         from PIL import Image
         from chandra.model.schema import BatchInputItem
@@ -117,8 +98,13 @@ class ChandraOCRAdapter(OCRAdapter):
         batch = []
 
         try:
+
             for image_path in image_paths:
-                image = Image.open(image_path).convert("RGB")
+
+                image = Image.open(
+                    image_path
+                ).convert("RGB")
+
                 images.append(image)
 
                 batch.append(
@@ -128,28 +114,30 @@ class ChandraOCRAdapter(OCRAdapter):
                     )
                 )
 
-            generate_kwargs = {
+            kwargs = {
                 "max_output_tokens": self.max_output_tokens,
                 "vllm_api_base": self.vllm_api_base,
             }
 
             if self.max_workers is not None:
-                generate_kwargs["max_workers"] = self.max_workers
+                kwargs["max_workers"] = self.max_workers
 
             results = self._manager.generate(
                 batch,
-                **generate_kwargs,
+                **kwargs,
             )
 
             if len(results) != len(image_paths):
                 raise RuntimeError(
-                    f"Chandra returned {len(results)} results "
-                    f"for {len(image_paths)} inputs"
+                    f"Chandra returned "
+                    f"{len(results)} results for "
+                    f"{len(image_paths)} images"
                 )
 
-            outputs: list[str] = []
+            outputs = []
 
             for result in results:
+
                 if result.error:
                     outputs.append("")
                 else:
@@ -162,5 +150,6 @@ class ChandraOCRAdapter(OCRAdapter):
             return outputs
 
         finally:
+
             for image in images:
                 image.close()
