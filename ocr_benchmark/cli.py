@@ -1,31 +1,29 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from .adapters import ADAPTER_REGISTRY
 from .adapters.chandra_adapter import ChandraOCRAdapter
 from .adapters.tesseract_adapter import TesseractAdapter
-
 from .dataset import (
     IAMAsciiDataset,
     StudentMessyHandwrittenDataset,
 )
-
 from .runner import BenchmarkRunner
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-
     parser = argparse.ArgumentParser(
-        description=__doc__
+        description="OCR benchmark runner"
     )
 
-    dataset_group = (
-        parser.add_mutually_exclusive_group(
-            required=True
-        )
+    # ------------------------------------------------------------------
+    # Dataset selection
+    # ------------------------------------------------------------------
+
+    dataset_group = parser.add_mutually_exclusive_group(
+        required=True
     )
 
     dataset_group.add_argument(
@@ -41,10 +39,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--smhd-root",
         type=Path,
         help=(
-            "Root of the Student Messy Handwritten Dataset "
+            "Root of the downloaded Student Messy Handwritten Dataset "
             "(must contain metadata.csv, scans/, and transcriptions/)."
         ),
     )
+
+    # ------------------------------------------------------------------
+    # IAM options
+    # ------------------------------------------------------------------
 
     parser.add_argument(
         "--split",
@@ -57,12 +59,57 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--words-txt",
+        "--lines-txt",
+        dest="gt_file",
+        type=Path,
+        default=None,
+        help=(
+            "IAM only: explicit path to words.txt or lines.txt."
+        ),
+    )
+
+    parser.add_argument(
+        "--images-root",
+        type=Path,
+        default=None,
+        help=(
+            "IAM only: explicit directory containing images."
+        ),
+    )
+
+    parser.add_argument(
+        "--include-err-segmented",
+        action="store_true",
+        help=(
+            "IAM only: include rows flagged 'err' "
+            "instead of skipping them."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # SMHD options
+    # ------------------------------------------------------------------
+
+    parser.add_argument(
+        "--smhd-metadata-csv",
+        type=Path,
+        default=None,
+        help=(
+            "SMHD only: optional explicit path to metadata.csv."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Adapter selection
+    # ------------------------------------------------------------------
+
+    parser.add_argument(
         "--adapters",
         default="all",
         help=(
             "Comma-separated adapter names, or 'all'. "
-            f"Registered: "
-            f"{', '.join(sorted(ADAPTER_REGISTRY))}"
+            f"Registered: {', '.join(sorted(ADAPTER_REGISTRY))}"
         ),
     )
 
@@ -75,42 +122,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    parser.add_argument(
-        "--include-err-segmented",
-        action="store_true",
-        help=(
-            "IAM only: include rows flagged 'err'."
-        ),
-    )
-
-    parser.add_argument(
-        "--words-txt",
-        "--lines-txt",
-        dest="gt_file",
-        type=Path,
-        default=None,
-        help=(
-            "IAM only: explicit path to words.txt/lines.txt."
-        ),
-    )
-
-    parser.add_argument(
-        "--images-root",
-        type=Path,
-        default=None,
-        help=(
-            "IAM only: explicit image directory."
-        ),
-    )
-
-    parser.add_argument(
-        "--smhd-metadata-csv",
-        type=Path,
-        default=None,
-        help=(
-            "SMHD only: explicit metadata.csv path."
-        ),
-    )
+    # ------------------------------------------------------------------
+    # Tesseract
+    # ------------------------------------------------------------------
 
     parser.add_argument(
         "--tesseract-psm",
@@ -122,9 +136,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # ---------------------------------------------------------
-    # Chandra / vLLM options
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Batching
+    # ------------------------------------------------------------------
 
     parser.add_argument(
         "--batch-size",
@@ -132,21 +146,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=1,
         help=(
             "Batch size for adapters implementing recognize_batch(). "
-            "Currently Chandra uses this for vLLM inference. "
-            "Default: 1."
+            "Chandra uses this with its vLLM backend. "
+            "Adapters without recognize_batch() fall back to serial "
+            "processing. Default: 1."
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Chandra / vLLM
+    # ------------------------------------------------------------------
+
     parser.add_argument(
         "--chandra-vllm-api-base",
-        default=os.environ.get(
-            "VLLM_API_BASE",
-            "http://localhost:8000/v1",
-        ),
+        default="http://localhost:8000/v1",
         help=(
             "Chandra vLLM OpenAI-compatible endpoint. "
-            "Default: $VLLM_API_BASE or "
-            "http://localhost:8000/v1."
+            "Default: http://localhost:8000/v1"
         ),
     )
 
@@ -155,8 +170,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=8192,
         help=(
-            "Maximum generated tokens per Chandra page. "
-            "Default: 8192."
+            "Maximum number of output tokens generated by Chandra "
+            "per image. Default: 8192."
         ),
     )
 
@@ -165,17 +180,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Maximum concurrent Chandra client requests. "
-            "Default: Chandra decides."
+            "Maximum number of concurrent requests submitted by "
+            "the Chandra vLLM client. Default: None."
         ),
     )
+
+    # ------------------------------------------------------------------
+    # Output
+    # ------------------------------------------------------------------
 
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("results"),
         help=(
-            "Where to write per_sample.csv and summary.csv."
+            "Directory where per_sample.csv and summary.csv "
+            "will be written."
         ),
     )
 
@@ -183,12 +203,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-
     args = build_arg_parser().parse_args(argv)
+
+    # ------------------------------------------------------------------
+    # Validate arguments
+    # ------------------------------------------------------------------
 
     if args.batch_size < 1:
         raise SystemExit(
             "--batch-size must be >= 1"
+        )
+
+    if args.max_samples is not None and args.max_samples < 1:
+        raise SystemExit(
+            "--max-samples must be >= 1"
         )
 
     if args.chandra_max_output_tokens < 1:
@@ -204,22 +232,18 @@ def main(argv: list[str] | None = None) -> None:
             "--chandra-max-workers must be >= 1"
         )
 
-    # ---------------------------------------------------------
-    # Adapter selection
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Resolve adapters
+    # ------------------------------------------------------------------
 
     if args.adapters == "all":
-
-        adapter_names = list(
-            ADAPTER_REGISTRY
-        )
+        adapter_names = list(ADAPTER_REGISTRY)
 
     else:
-
         adapter_names = [
-            a.strip()
-            for a in args.adapters.split(",")
-            if a.strip()
+            name.strip()
+            for name in args.adapters.split(",")
+            if name.strip()
         ]
 
         unknown = (
@@ -229,19 +253,21 @@ def main(argv: list[str] | None = None) -> None:
 
         if unknown:
             raise SystemExit(
-                f"Unknown adapter(s): "
+                "Unknown adapter(s): "
                 f"{', '.join(sorted(unknown))}. "
-                f"Registered: "
+                "Registered: "
                 f"{', '.join(sorted(ADAPTER_REGISTRY))}"
             )
 
-    using_smhd = (
-        args.smhd_root is not None
-    )
+    using_smhd = args.smhd_root is not None
 
     adapters = []
 
     for name in adapter_names:
+
+        # --------------------------------------------------------------
+        # Tesseract gets dataset-aware PSM defaults.
+        # --------------------------------------------------------------
 
         if name == "tesseract":
 
@@ -262,6 +288,10 @@ def main(argv: list[str] | None = None) -> None:
                 )
             )
 
+        # --------------------------------------------------------------
+        # Chandra uses vLLM.
+        # --------------------------------------------------------------
+
         elif name == "chandra":
 
             adapters.append(
@@ -279,28 +309,26 @@ def main(argv: list[str] | None = None) -> None:
                 )
             )
 
+        # --------------------------------------------------------------
+        # All other adapters use their normal constructors.
+        # --------------------------------------------------------------
+
         else:
 
             adapters.append(
                 ADAPTER_REGISTRY[name]()
             )
 
-    # ---------------------------------------------------------
-    # Dataset
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Build dataset
+    # ------------------------------------------------------------------
 
     if args.smhd_root is not None:
-
-        metadata_csv = (
-            args.smhd_metadata_csv
-            if args.smhd_metadata_csv is not None
-            else None
-        )
 
         dataset = StudentMessyHandwrittenDataset(
             root=args.smhd_root,
             max_samples=args.max_samples,
-            metadata_csv=metadata_csv,
+            metadata_csv=args.smhd_metadata_csv,
         )
 
     else:
@@ -322,9 +350,9 @@ def main(argv: list[str] | None = None) -> None:
             images_root=args.images_root,
         )
 
-    # ---------------------------------------------------------
-    # Runner
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Create runner
+    # ------------------------------------------------------------------
 
     runner = BenchmarkRunner(
         adapters=adapters,
@@ -333,14 +361,21 @@ def main(argv: list[str] | None = None) -> None:
         batch_size=args.batch_size,
     )
 
+    # ------------------------------------------------------------------
+    # Run benchmark
+    # ------------------------------------------------------------------
+
     summary_path = runner.run()
 
+    print()
+    print("=" * 70)
+    print("BENCHMARK COMPLETE")
+    print("=" * 70)
     print(
-        f"\nDone. Summary: {summary_path}"
+        f"Summary          : {summary_path}"
     )
-
     print(
-        "Per-sample detail: "
+        f"Per-sample CSV   : "
         f"{args.output_dir / 'per_sample.csv'}"
     )
 
